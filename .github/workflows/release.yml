@@ -65,7 +65,9 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CC: ${{ matrix.cc }}
-        run: go build -buildmode=c-shared -trimpath -o codex-ny-timezone.${{ matrix.ext }} .
+        # 显式列出 Go 文件：同目录的 plugin.c 是纯 C 参考实现，
+        # 若用 `go build .` 会被 cgo 一起编译，导致 cliproxy_plugin_init 重复定义
+        run: go build -buildmode=c-shared -trimpath -o codex-ny-timezone.${{ matrix.ext }} main.go rewrite.go
 
       # 插件商店要求资产名 <pluginID>_<version>_<goos>_<goarch>.zip，且动态库位于 zip 根目录
       - name: Package
