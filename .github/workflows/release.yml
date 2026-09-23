@@ -1,0 +1,111 @@
+name: build-plugin
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            cc: gcc
+            ext: so
+            apt: ""
+          - name: linux-arm64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            ext: so
+            apt: gcc-aarch64-linux-gnu
+          - name: windows-amd64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            cc: x86_64-w64-mingw32-gcc
+            ext: dll
+            apt: gcc-mingw-w64-x86-64
+          - name: darwin-arm64
+            runner: macos-latest
+            goos: darwin
+            goarch: arm64
+            cc: clang
+            ext: dylib
+            apt: ""
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install cross compiler
+        if: matrix.apt != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+
+      # 插件 ID 取自动态库文件名（去掉扩展名），文件名必须是 codex-ny-timezone
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+        run: go build -buildmode=c-shared -trimpath -o codex-ny-timezone.${{ matrix.ext }} .
+
+      # 插件商店要求资产名 <pluginID>_<version>_<goos>_<goarch>.zip，且动态库位于 zip 根目录
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f codex-ny-timezone.h
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="dev-${GITHUB_SHA:0:7}"
+          fi
+          mkdir -p dist
+          zip -j "dist/codex-ny-timezone_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.zip" "codex-ny-timezone.${{ matrix.ext }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: codex-ny-timezone-${{ matrix.name }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.zip > checksums.txt
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.zip
+            dist/checksums.txt
+          generate_release_notes: true
