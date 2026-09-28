@@ -41,6 +41,7 @@ import (
 )
 
 const abiVersion uint32 = 1
+
 type envelope struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
@@ -62,6 +63,29 @@ type requestTransform struct {
 }
 type payloadResponse struct {
 	Body []byte `json:"Body"`
+}
+
+type requestInterceptRequest struct {
+	RequestID      string              `json:"RequestID"`
+	TraceID        string              `json:"TraceID"`
+	SourceFormat   string              `json:"SourceFormat"`
+	ToFormat       string              `json:"ToFormat"`
+	Model          string              `json:"Model"`
+	RequestedModel string              `json:"RequestedModel"`
+	Stream         bool                `json:"Stream"`
+	Headers        map[string][]string `json:"Headers"`
+	Body           []byte              `json:"Body"`
+	Metadata       map[string]any      `json:"Metadata"`
+}
+
+type requestInterceptResponse struct {
+	Headers         map[string][]string `json:"Headers,omitempty"`
+	Body            []byte              `json:"Body,omitempty"`
+	ClearHeaders    []string            `json:"ClearHeaders,omitempty"`
+	Terminate       bool                `json:"Terminate,omitempty"`
+	StatusCode      int                 `json:"StatusCode,omitempty"`
+	ResponseHeaders map[string][]string `json:"ResponseHeaders,omitempty"`
+	ResponseBody    []byte              `json:"ResponseBody,omitempty"`
 }
 
 func main() {}
@@ -118,6 +142,8 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 		return okEnvelope(registrationJSON())
 	case "request.normalize":
 		return normalizeRequest(request)
+	case "request.intercept_before", "request.intercept_after":
+		return interceptRequest(request)
 	default:
 		return errorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
@@ -157,16 +183,21 @@ func registrationJSON() map[string]any {
 	return map[string]any{
 		"schema_version": 1,
 		"metadata": map[string]any{
-			"Name":    "codex-ny-timezone",
-			"Version": "1.0.0",
-			"Author":  "local",
+			"Name":             "codex-ny-timezone",
+			"Version":          "1.0.0",
+			"Author":           "local",
+			"GitHubRepository": "https://github.com/xionghaizhi/codex-ny-tz-plugin",
+			"Logo":             "https://github.com/xionghaizhi/codex-ny-tz-plugin",
 			"ConfigFields": []map[string]any{{
 				"Name":        "timezone",
 				"Type":        "string",
 				"Description": "IANA timezone for Codex environment_context rewrite",
 			}},
 		},
-		"capabilities": map[string]any{"request_normalizer": true},
+		"capabilities": map[string]any{
+			"request_normalizer":  true,
+			"request_interceptor": true,
+		},
 	}
 }
 
@@ -178,6 +209,25 @@ func normalizeRequest(raw []byte) ([]byte, error) {
 		}
 	}
 	return okEnvelope(payloadResponse{Body: rewriteEnvContext(req.Body)})
+}
+
+func interceptRequest(raw []byte) ([]byte, error) {
+	var req requestInterceptRequest
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return nil, err
+		}
+	}
+	for headerName := range req.Headers {
+		if strings.EqualFold(headerName, "Accept-Language") {
+			return okEnvelope(requestInterceptResponse{
+				Headers: map[string][]string{
+					"Accept-Language": {"en-US,en;q=0.9"},
+				},
+			})
+		}
+	}
+	return okEnvelope(requestInterceptResponse{})
 }
 
 func okEnvelope(v any) ([]byte, error) {

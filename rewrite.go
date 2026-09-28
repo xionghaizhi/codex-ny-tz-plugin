@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const defaultTZ = "America/New_York"
+const defaultTZ = "Asia/Singapore"
 
 var tzName atomic.Value
 
@@ -33,19 +33,20 @@ func rewriteEnvContext(body []byte) []byte {
 }
 
 var (
-	reTZRaw   = regexp.MustCompile(`(?s)<timezone>[^<]*</timezone>`)
+	reTZRaw   = regexp.MustCompile(`(?s)<timezone>.*?</timezone>`)
 	reTZEsc   = regexp.MustCompile(`(?s)\\u003ctimezone\\u003e.*?\\u003c/timezone\\u003e`)
-	reDateRaw = regexp.MustCompile(`(?s)<current_date>[^<]*</current_date>`)
+	reDateRaw = regexp.MustCompile(`(?s)<current_date>.*?</current_date>`)
 	reDateEsc = regexp.MustCompile(`(?s)\\u003ccurrent_date\\u003e.*?\\u003c/current_date\\u003e`)
 )
 
 func replaceTag(s, tag, val string) string {
 	if tag == "timezone" {
 		s = reTZRaw.ReplaceAllString(s, "<timezone>"+val+"</timezone>")
-		s = reTZEsc.ReplaceAllString(s, "\\u003ctimezone\\u003e"+val+"\\u003c/timezone\\u003e")
-	} else if tag == "current_date" {
+		return reTZEsc.ReplaceAllString(s, "\\u003ctimezone\\u003e"+val+"\\u003c/timezone\\u003e")
+	}
+	if tag == "current_date" {
 		s = reDateRaw.ReplaceAllString(s, "<current_date>"+val+"</current_date>")
-		s = reDateEsc.ReplaceAllString(s, "\\u003ccurrent_date\\u003e"+val+"\\u003c/current_date\\u003e")
+		return reDateEsc.ReplaceAllString(s, "\\u003ccurrent_date\\u003e"+val+"\\u003c/current_date\\u003e")
 	}
 	return s
 }
