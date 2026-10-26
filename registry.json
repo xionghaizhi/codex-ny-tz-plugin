@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "codex-ny-timezone",
+      "name": "Codex 时区与语言调整",
+      "description": "改写 Codex 请求中的时区和日期，并规范已有的 Accept-Language 请求头。",
+      "author": "xionghaizhi",
+      "repository": "https://github.com/xionghaizhi/codex-ny-tz-plugin"
+    }
+  ]
+}
