@@ -14,7 +14,7 @@ func TestInterceptRequestReplacesExistingAcceptLanguage(t *testing.T) {
 		t.Fatalf("marshal request: %v", err)
 	}
 
-	result, err := interceptRequest(raw)
+	result, err := interceptRequest(raw, nil)
 	if err != nil {
 		t.Fatalf("intercept request: %v", err)
 	}
@@ -31,14 +31,14 @@ func TestInterceptRequestReplacesExistingAcceptLanguage(t *testing.T) {
 	}
 }
 
-func TestConcurrencyRegistersOnlyStaticResources(t *testing.T) {
+func TestConcurrencyRegistersAuthenticatedStatsAndStaticResources(t *testing.T) {
 	raw, err := handleMethod("management.register", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
 		Result struct {
-			Routes    []json.RawMessage
+			Routes    []struct{ Method, Path string }
 			Resources []struct{ Path, Menu string }
 		}
 	}
@@ -46,7 +46,8 @@ func TestConcurrencyRegistersOnlyStaticResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	resources := response.Result.Resources
-	if len(response.Result.Routes) != 0 || len(resources) != 2 ||
+	routes := response.Result.Routes
+	if len(routes) != 1 || routes[0].Method != "GET" || routes[0].Path != "/plugins/codex-ny-timezone/concurrency" || len(resources) != 2 ||
 		resources[0].Path != "/index.html" || resources[0].Menu != "并发查看" ||
 		resources[1].Path != "/concurrency.js" || resources[1].Menu != "" {
 		t.Fatalf("unexpected routes: %s", raw)
@@ -59,7 +60,8 @@ func TestConcurrencyResources(t *testing.T) {
 		status                      int
 	}{
 		{"GET", "/index.html", "text/html", "./concurrency.js", 200},
-		{"GET", "/concurrency.js", "text/javascript", "page_size=1000", 200},
+		{"GET", "/concurrency.js", "text/javascript", "/v0/management/plugins/codex-ny-timezone/concurrency", 200},
+		{"GET", "/concurrency", "text/plain", "", 404},
 		{"GET", "/anything", "text/plain", "", 404},
 		{"POST", "/index.html", "text/plain", "", 404},
 	} {
@@ -81,7 +83,7 @@ func TestConcurrencyResources(t *testing.T) {
 }
 
 func TestInterceptRequestLeavesMissingAcceptLanguageUntouched(t *testing.T) {
-	result, err := interceptRequest([]byte(`{"Headers":{"User-Agent":["codex"]}}`))
+	result, err := interceptRequest([]byte(`{"Headers":{"User-Agent":["codex"]}}`), nil)
 	if err != nil {
 		t.Fatalf("intercept request: %v", err)
 	}

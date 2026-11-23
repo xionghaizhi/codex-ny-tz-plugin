@@ -35,46 +35,45 @@
     dl div + div { border-left: 0; }
     dd { font: 700 clamp(2.5rem, 10vw, 4.2rem)/1.13 ui-monospace, monospace; }
     #sample-scope { margin: 0 0 14px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { padding: 8px 5px; text-align: right; border-bottom: 1px solid var(--line); }
-    th:first-child, td:first-child { text-align: left; overflow-wrap: anywhere; }
-    th:not(:first-child) { white-space: nowrap; }
-    nav { margin-top: 12px; }
+    svg { width: 100%; height: auto; display: block; margin: 12px 0; }
+    svg text { fill: var(--muted); font: 13px ui-monospace, monospace; }
+    .gridline { stroke: var(--line); }
+    #series { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
     @media (max-width: 380px) { main { margin-top: 22px; } .controls > * { flex: 1 0 100%; } }
   </style>
 </head>
 <body>
   <main>
     <header>
-      <small>CPA / ACCOUNT SNAPSHOT</small>
+      <small>CPA / REQUEST ACTIVITY</small>
       <h1>并发查看</h1>
-      <p class="muted">查看账号池正在执行的请求，以及正在等待空位的请求。</p>
+      <p class="muted">查看 CPA 请求回调观测到的在途数。完成回调可能晚于请求实际结束，峰值为观测值。</p>
     </header>
     <form id="concurrency-query" autocomplete="off">
       <label for="management-key">CPA 管理密钥</label>
       <div class="controls">
         <input id="management-key" type="password" required autocomplete="off" spellcheck="false" aria-describedby="key-note">
-        <button id="refresh" type="submit">查询并发</button>
+        <button id="refresh" type="submit">开始监控</button>
       </div>
       <p class="muted" id="key-note">只在当前页面使用，不保存密钥。</p>
     </form>
-    <p id="status" class="muted" role="status">输入管理密钥后查询。</p>
+    <p id="status" class="muted" role="status">输入管理密钥后开始监控。</p>
     <dl aria-label="并发统计">
       <div><dt>当前在途</dt><dd id="active">—</dd></div>
-      <div><dt>当前等待</dt><dd id="waiting">—</dd></div>
+      <div><dt>本次运行观测峰值</dt><dd id="peak">—</dd><p id="peak-at" class="muted"></p></div>
     </dl>
     <p id="sample-scope" class="muted">尚未读取数据</p>
-    <section aria-labelledby="account-list" id="account-results" hidden>
-      <h2 id="account-list">有在途或等待的账号</h2>
-      <p id="empty" class="muted" hidden>这个范围内没有在途或等待的请求。</p>
-      <table id="account-table" hidden>
-        <thead><tr><th scope="col">账号</th><th scope="col">在途</th><th scope="col">等待</th><th scope="col">上限</th></tr></thead>
-        <tbody id="busy-accounts"></tbody>
-      </table>
-      <nav aria-label="账号分页" id="pages" hidden>
-        <button id="previous-page" type="button">上一页</button>
-        <button id="next-page" type="button">下一页</button>
-      </nav>
+    <section aria-labelledby="chart-title" id="chart" hidden>
+      <h2 id="chart-title">并发趋势</h2>
+      <p class="muted">每 5 秒取该时段的最高在途数。重启 CPA 或重新加载插件动态库后重新统计。</p>
+      <svg viewBox="0 0 600 197" role="img" aria-label="近十分钟的在途请求峰值趋势图">
+        <path class="gridline" d="M30 16H580 M30 91H580 M30 166H580"/>
+        <text id="chart-max" x="25" y="20" text-anchor="end"></text>
+        <text x="25" y="170" text-anchor="end">0</text>
+        <text id="chart-start" x="30" y="191"></text>
+        <text id="chart-end" x="580" y="191" text-anchor="end"></text>
+        <path id="series"/>
+      </svg>
     </section>
   </main>
 </body>

@@ -38,11 +38,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
 
 const abiVersion uint32 = 1
+
+var requestMeter atomic.Pointer[concurrencyMeter]
+
 const concurrencyResourcePath = "/v0/resource/plugins/codex-ny-timezone"
 
 //go:embed web/index.html
@@ -61,7 +65,8 @@ type envelopeError struct {
 	Message string `json:"message"`
 }
 type lifecycleRequest struct {
-	ConfigYAML []byte `json:"config_yaml"`
+	ConfigYAML    []byte `json:"config_yaml"`
+	SchemaVersion uint32 `json:"schema_version"`
 }
 type requestTransform struct {
 	FromFormat string `json:"FromFormat"`
@@ -154,16 +159,31 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
 	case "plugin.register", "plugin.reconfigure":
 		configure(request)
+		var lifecycle lifecycleRequest
+		_ = json.Unmarshal(request, &lifecycle)
+		if lifecycle.SchemaVersion < 2 {
+			requestMeter.Store(nil)
+		} else if method == "plugin.register" || requestMeter.Load() == nil {
+			requestMeter.Store(newConcurrencyMeter())
+		}
 		return okEnvelope(registrationJSON())
 	case "request.normalize":
 		return normalizeRequest(request)
-	case "request.intercept_before", "request.intercept_after":
-		return interceptRequest(request)
+	case "request.intercept_before":
+		return interceptRequest(request, requestMeter.Load())
+	case "request.intercept_after":
+		return interceptRequest(request, nil)
+	case "request.complete":
+		var completed struct{ RequestID string }
+		if meter := requestMeter.Load(); meter != nil && json.Unmarshal(request, &completed) == nil {
+			meter.change(completed.RequestID, true, time.Now())
+		}
+		return okEnvelope(struct{}{})
 	case "management.register":
-		return okEnvelope(map[string]any{"resources": []map[string]string{
-			{"path": "/index.html", "menu": "并发查看"},
-			{"path": "/concurrency.js"},
-		}})
+		return okEnvelope(map[string]any{
+			"routes":    []map[string]string{{"method": "GET", "path": "/plugins/codex-ny-timezone" + concurrencyStatsRoute}},
+			"resources": []map[string]string{{"path": "/index.html", "menu": "并发查看"}, {"path": "/concurrency.js"}},
+		})
 	case "management.handle":
 		return serveConcurrencyResource(request)
 	default:
@@ -175,6 +195,9 @@ func serveConcurrencyResource(raw []byte) ([]byte, error) {
 	var request struct{ Method, Path string }
 	if err := json.Unmarshal(raw, &request); err != nil {
 		return nil, err
+	}
+	if request.Method == http.MethodGet && request.Path == "/v0/management/plugins/codex-ny-timezone"+concurrencyStatsRoute {
+		return serveConcurrencyStats(requestMeter.Load())
 	}
 	status := http.StatusNotFound
 	contentType := "text/plain; charset=utf-8"
@@ -230,11 +253,16 @@ func yamlLike(key, text string) string {
 }
 
 func registrationJSON() map[string]any {
+	schema := 1
+	lifecycle := requestMeter.Load() != nil
+	if lifecycle {
+		schema = 2
+	}
 	return map[string]any{
-		"schema_version": 1,
+		"schema_version": schema,
 		"metadata": map[string]any{
 			"Name":             "codex-ny-timezone",
-			"Version":          "1.1.0",
+			"Version":          "1.2.0",
 			"Author":           "local",
 			"GitHubRepository": "https://github.com/xionghaizhi/codex-ny-tz-plugin",
 			"Logo":             "https://github.com/xionghaizhi/codex-ny-tz-plugin",
@@ -245,9 +273,10 @@ func registrationJSON() map[string]any {
 			}},
 		},
 		"capabilities": map[string]any{
-			"request_normalizer":  true,
-			"request_interceptor": true,
-			"management_api":      true,
+			"request_normalizer":       true,
+			"request_interceptor":      true,
+			"management_api":           true,
+			"request_lifecycle_plugin": lifecycle,
 		},
 	}
 }
@@ -262,12 +291,15 @@ func normalizeRequest(raw []byte) ([]byte, error) {
 	return okEnvelope(payloadResponse{Body: rewriteEnvContext(req.Body)})
 }
 
-func interceptRequest(raw []byte) ([]byte, error) {
+func interceptRequest(raw []byte, meter *concurrencyMeter) ([]byte, error) {
 	var req requestInterceptRequest
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
 		}
+	}
+	if meter != nil {
+		meter.change(req.RequestID, false, time.Now())
 	}
 	for headerName := range req.Headers {
 		if strings.EqualFold(headerName, "Accept-Language") {

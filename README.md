@@ -26,28 +26,23 @@ plugins:
 
 请求头改写只在上游请求已经包含 `Accept-Language` 时执行；没有该请求头时保持原请求不变。
 
-## 查看账号并发
+## 查看 CPA 并发
 
-在 CPA 管理中心打开插件菜单「并发查看」，或访问同一 CPA 地址下的：
+在 CPA 管理中心打开「并发查看」，或访问同一实例的 `/v0/resource/plugins/codex-ny-timezone/index.html`。
+输入 CPA 管理密钥，点击「开始监控」。每 2 秒读取本插件的管理接口；密钥不写浏览器存储。
+不依赖其他插件。宿主需要支持请求生命周期 schema v2；旧宿主仍保留原有时区与请求头改写。
 
-```
-/v0/resource/plugins/codex-ny-timezone/index.html
-```
-
-输入 **CPA 管理密钥**，点击「查询并发」；点「刷新并发」可重新读取第一页。
-数据来自同一实例的 `cpa-account-config-manager` 账号管理接口，因此需要启用该插件，
-且宿主需支持账号并发生命周期回调。页面只读，密钥不写入浏览器存储。
-
-- **当前在途**：已经放行、尚未结束的请求数。
-- **当前等待**：正在等空位的请求数，不计入在途。
-- 只有一页时显示账号列表合计；有多页时显示本页合计，可翻页查看，不能当作整个账号池的总数。
+- **当前在途**：已进入 CPA 前置请求拦截、尚未收到完成回调的模型请求数。同一请求重试及其间等待仍计一次。
+  前置拦截后被认证、路由或其他步骤拒绝的请求也会计入，直到收到完成回调；完成回调是异步的，监控值可能短时高于实际并发，历史峰值也会保留该观测值。
+- **本次运行峰值**：从插件加载起的最高在途数及发生时间；无需打开页面。重启 CPA 或重新加载插件动态库后重新统计。
+- **并发趋势**：近 10 分钟内，每 5 秒的最高在途数。统计仅覆盖当前实例，不是集群汇总，不限流，不显示单独的排队数。
 
 ## 构建
 
 ```bash
-go build -buildmode=c-shared -trimpath -o codex-ny-timezone.so main.go rewrite.go
+go build -buildmode=c-shared -trimpath -o codex-ny-timezone.so main.go rewrite.go concurrency.go
 # plugin.c is a separate C reference implementation, so list the Go files for tests too.
-go test main.go rewrite.go rewrite_test.go main_test.go
+go test main.go rewrite.go concurrency.go rewrite_test.go main_test.go concurrency_test.go
 ```
 
 必须显式列出 Go 文件。同目录 `plugin.c` 是纯 C 参考实现，用 `go build .` 会被 cgo 一起编译，

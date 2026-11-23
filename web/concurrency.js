@@ -2,93 +2,75 @@ const query = document.getElementById("concurrency-query");
 const managementKey = document.getElementById("management-key");
 const refresh = document.getElementById("refresh");
 const statusText = document.getElementById("status");
-const previousPage = document.getElementById("previous-page");
-const nextPage = document.getElementById("next-page");
-let page = 1;
-let pages = 0;
+const series = document.getElementById("series");
+const clock = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+let timer;
 let hasSnapshot = false;
 
-async function readConcurrency(key, requestedPage) {
-  const response = await fetch(`/v0/management/plugins/cpa-account-config-manager/accounts?page=${requestedPage}&page_size=1000`, {
+async function readConcurrency(key) {
+  const response = await fetch("/v0/management/plugins/codex-ny-timezone/concurrency", {
     headers: { Authorization: `Bearer ${key}` },
     cache: "no-store",
     redirect: "error",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(8000),
   });
-  if (response.status === 401 || response.status === 403) throw new Error("管理密钥无效，或当前地址不允许访问管理接口。");
-  if (response.status === 404) throw new Error("未找到账号管理插件接口，请确认插件已启用。");
+  if (response.status === 401 || response.status === 403) throw new DOMException("管理密钥无效，或当前地址不允许管理接口访问。", "AccessError");
+  if (response.status === 503) throw new DOMException("当前 CPA 不支持请求生命周期统计。", "NotSupportedError");
   if (!response.ok) throw new Error(`查询失败（HTTP ${response.status}）。`);
-  const snapshot = await response.json();
-  if (snapshot.account_concurrency?.supported === false) throw new Error("当前 CPA 不支持账号并发统计。");
-  if (snapshot.account_concurrency?.supported !== true || !Array.isArray(snapshot.accounts) ||
-      snapshot.page !== requestedPage || !Number.isInteger(snapshot.pages) || snapshot.pages < 0 ||
-      snapshot.accounts.some(({ concurrency }) => !concurrency || ![concurrency.active, concurrency.waiting, concurrency.limit]
-        .every(count => Number.isSafeInteger(count) && count >= 0))) {
-    throw new Error("账号管理插件未返回有效的并发数据。");
-  }
-  if (requestedPage > 1 && requestedPage > snapshot.pages) throw new Error("账号页数已变化，请点「刷新并发」回到首页。");
-  return snapshot;
+  return response.json();
 }
 
-function renderConcurrency(snapshot) {
-  const rows = document.createDocumentFragment();
-  let active = 0;
-  let waiting = 0;
-  for (const { name, id, concurrency } of snapshot.accounts) {
-    active += concurrency.active;
-    waiting += concurrency.waiting;
-    if (concurrency.active === 0 && concurrency.waiting === 0) continue;
-    const row = document.createElement("tr");
-    for (const value of [name || id, concurrency.active, concurrency.waiting, concurrency.limit || "不限"]) {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      row.append(cell);
-    }
-    rows.append(row);
-  }
-  const hasBusyAccounts = rows.childElementCount > 0;
-  document.getElementById("busy-accounts").replaceChildren(rows);
-  document.getElementById("empty").hidden = hasBusyAccounts;
-  document.getElementById("account-table").hidden = !hasBusyAccounts;
+function renderConcurrency({ active, peak, peak_at, tick, points }) {
   document.getElementById("active").textContent = active;
-  document.getElementById("waiting").textContent = waiting;
-  const scope = pages > 1 ? `本页合计 · 第 ${page} / ${pages} 页` : "账号列表合计";
-  document.getElementById("sample-scope").textContent = `${scope} · ${new Date().toLocaleTimeString()} 更新`;
-  document.getElementById("pages").hidden = pages <= 1;
-  document.getElementById("account-results").hidden = false;
+  document.getElementById("peak").textContent = peak;
+  document.getElementById("peak-at").textContent = peak_at ? `发生于 ${new Date(peak_at * 1000).toLocaleString()}` : "尚未记录到请求";
+  const scale = Math.max(1, ...points.map(point => point.peak));
+  document.getElementById("chart-max").textContent = scale;
+  document.getElementById("chart-start").textContent = clock.format((tick - 119) * 5000);
+  document.getElementById("chart-end").textContent = clock.format(tick * 5000);
+  const segments = points.map(({ tick: time, peak: count }) => {
+    const y = 166 - count * 150 / scale;
+    const x = 30 + (time - tick + 119) * 550 / 120;
+    return [x, y];
+  });
+  series.setAttribute("d", segments.map(([x, y], i) => `${i ? "V" : "M"}${i ? y : `${x} ${y}`} H${x + 550 / 120}`).join(" "));
+  document.getElementById("sample-scope").textContent = `${clock.format(Date.now())} 更新 · 近 10 分钟`;
+  document.getElementById("chart").hidden = false;
 }
 
-async function refreshConcurrency(requestedPage) {
-  if (refresh.disabled || !query.reportValidity()) return;
+async function refreshConcurrency() {
+  clearTimeout(timer);
   const key = managementKey.value.trim();
-  if (key === "") {
-    statusText.textContent = "请输入管理密钥。";
-    return;
-  }
-  refresh.disabled = previousPage.disabled = nextPage.disabled = managementKey.disabled = true;
-  statusText.textContent = "正在读取账号并发…";
+  if (!key) return;
+  refresh.disabled = true;
+  managementKey.disabled = true;
   try {
-    const snapshot = await readConcurrency(key, requestedPage);
-    page = snapshot.page;
-    pages = snapshot.pages;
-    renderConcurrency(snapshot);
+    renderConcurrency(await readConcurrency(key));
     hasSnapshot = true;
-    refresh.textContent = "刷新并发";
-    statusText.textContent = "已更新。";
+    statusText.textContent = "实时更新中，每 2 秒刷新。";
+    timer = setTimeout(refreshConcurrency, 2000);
   } catch (error) {
-    const message = error instanceof TypeError || error instanceof SyntaxError ? "无法读取并发接口，请检查 CPA 连接。" :
-      error.name === "TimeoutError" ? "查询超时，请重试。" : error.message;
-    statusText.textContent = hasSnapshot ? `${message} 当前显示上次查询结果。` : message;
+    const stopped = error.name === "AccessError" || error.name === "NotSupportedError";
+    const message = error.name === "TimeoutError" ? "查询超时。" : error instanceof TypeError ? "CPA 连接中断。" : error.message;
+    statusText.textContent = `${message}${hasSnapshot ? " 显示的是上次数据。" : ""}${stopped ? " 监控已暂停。" : " 2 秒后重试。"}`;
+    if (!stopped) timer = setTimeout(refreshConcurrency, 2000);
   } finally {
-    refresh.disabled = managementKey.disabled = false;
-    previousPage.disabled = page <= 1;
-    nextPage.disabled = page >= pages;
+    refresh.disabled = false;
+    managementKey.disabled = false;
   }
 }
 
+managementKey.addEventListener("input", () => {
+  clearTimeout(timer);
+  hasSnapshot = false;
+  document.getElementById("active").textContent = "—";
+  document.getElementById("peak").textContent = "—";
+  document.getElementById("peak-at").textContent = "";
+  document.getElementById("sample-scope").textContent = "尚未读取数据";
+  document.getElementById("chart").hidden = true;
+  statusText.textContent = "输入管理密钥后开始监控。";
+});
 query.addEventListener("submit", event => {
   event.preventDefault();
-  void refreshConcurrency(1);
+  if (!refresh.disabled && query.reportValidity()) void refreshConcurrency();
 });
-previousPage.addEventListener("click", () => void refreshConcurrency(page - 1));
-nextPage.addEventListener("click", () => void refreshConcurrency(page + 1));
