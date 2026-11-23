@@ -34,13 +34,22 @@ extern void cliproxyPluginShutdown(void);
 import "C"
 
 import (
+	_ "embed"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"time"
 	"unsafe"
 )
 
 const abiVersion uint32 = 1
+const concurrencyResourcePath = "/v0/resource/plugins/codex-ny-timezone"
+
+//go:embed web/index.html
+var concurrencyPage []byte
+
+//go:embed web/concurrency.js
+var concurrencyScript []byte
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -86,6 +95,12 @@ type requestInterceptResponse struct {
 	StatusCode      int                 `json:"StatusCode,omitempty"`
 	ResponseHeaders map[string][]string `json:"ResponseHeaders,omitempty"`
 	ResponseBody    []byte              `json:"ResponseBody,omitempty"`
+}
+
+type concurrencyResourceResponse struct {
+	StatusCode int
+	Headers    http.Header
+	Body       []byte
 }
 
 func main() {}
@@ -144,9 +159,44 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 		return normalizeRequest(request)
 	case "request.intercept_before", "request.intercept_after":
 		return interceptRequest(request)
+	case "management.register":
+		return okEnvelope(map[string]any{"resources": []map[string]string{
+			{"path": "/index.html", "menu": "并发查看"},
+			{"path": "/concurrency.js"},
+		}})
+	case "management.handle":
+		return serveConcurrencyResource(request)
 	default:
 		return errorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
+}
+
+func serveConcurrencyResource(raw []byte) ([]byte, error) {
+	var request struct{ Method, Path string }
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return nil, err
+	}
+	status := http.StatusNotFound
+	contentType := "text/plain; charset=utf-8"
+	var body []byte
+	if request.Method == http.MethodGet {
+		switch request.Path {
+		case concurrencyResourcePath + "/index.html":
+			status, contentType, body = http.StatusOK, "text/html; charset=utf-8", concurrencyPage
+		case concurrencyResourcePath + "/concurrency.js":
+			status, contentType, body = http.StatusOK, "text/javascript; charset=utf-8", concurrencyScript
+		}
+	}
+	return okEnvelope(concurrencyResourceResponse{
+		StatusCode: status,
+		Headers: http.Header{
+			"Content-Type":            {contentType},
+			"Cache-Control":           {"no-store"},
+			"Content-Security-Policy": {"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"},
+			"X-Content-Type-Options":  {"nosniff"},
+		},
+		Body: body,
+	})
 }
 
 func configure(raw []byte) {
@@ -197,6 +247,7 @@ func registrationJSON() map[string]any {
 		"capabilities": map[string]any{
 			"request_normalizer":  true,
 			"request_interceptor": true,
+			"management_api":      true,
 		},
 	}
 }
