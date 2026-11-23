@@ -234,7 +234,7 @@ func registrationJSON() map[string]any {
 		"schema_version": 1,
 		"metadata": map[string]any{
 			"Name":             "codex-ny-timezone",
-			"Version":          "1.0.0",
+			"Version":          "1.1.0",
 			"Author":           "local",
 			"GitHubRepository": "https://github.com/xionghaizhi/codex-ny-tz-plugin",
 			"Logo":             "https://github.com/xionghaizhi/codex-ny-tz-plugin",
