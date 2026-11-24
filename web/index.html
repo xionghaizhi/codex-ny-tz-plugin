@@ -30,7 +30,7 @@
     button:disabled { opacity: .55; cursor: default; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     #status { margin: 8px 0 16px; min-height: 1.55em; }
-    dl { display: grid; grid-template-columns: 1fr 1fr; border-top: 3px solid var(--accent); background: var(--surface); margin-bottom: 14px; }
+    dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 3px solid var(--accent); background: var(--surface); margin-bottom: 14px; }
     dl div { padding: 14px 18px; border: 1px solid var(--line); border-top: 0; }
     dl div + div { border-left: 0; }
     dd { font: 700 clamp(2.5rem, 10vw, 4.2rem)/1.13 ui-monospace, monospace; }
@@ -39,6 +39,7 @@
     svg text { fill: var(--muted); font: 13px ui-monospace, monospace; }
     .gridline { stroke: var(--line); }
     #series { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+    @media (max-width: 620px) { dl { grid-template-columns: 1fr; } dl div + div { border-left: 1px solid var(--line); border-top: 0; } }
     @media (max-width: 380px) { main { margin-top: 22px; } .controls > * { flex: 1 0 100%; } }
   </style>
 </head>
@@ -61,11 +62,12 @@
     <dl aria-label="并发统计">
       <div><dt>当前在途</dt><dd id="active">—</dd></div>
       <div><dt>本次运行观测峰值</dt><dd id="peak">—</dd><p id="peak-at" class="muted"></p></div>
+      <div><dt>历史最高峰值</dt><dd id="historical-peak">—</dd><p id="historical-peak-at" class="muted" role="status"></p></div>
     </dl>
     <p id="sample-scope" class="muted">尚未读取数据</p>
     <section aria-labelledby="chart-title" id="chart" hidden>
-      <h2 id="chart-title">并发趋势</h2>
-      <p class="muted">每 5 秒取该时段的最高在途数。重启 CPA 或重新加载插件动态库后重新统计。</p>
+      <h2 id="chart-title">近 10 分钟时段峰值</h2>
+      <p class="muted">每 5 秒记录该时段的最高在途数，重启后重新统计。</p>
       <svg viewBox="0 0 600 197" role="img" aria-label="近十分钟的在途请求峰值趋势图">
         <path class="gridline" d="M30 16H580 M30 91H580 M30 166H580"/>
         <text id="chart-max" x="25" y="20" text-anchor="end"></text>

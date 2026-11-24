@@ -52,6 +52,10 @@ func TestConcurrencyRegistersAuthenticatedStatsAndStaticResources(t *testing.T) 
 		resources[1].Path != "/concurrency.js" || resources[1].Menu != "" {
 		t.Fatalf("unexpected routes: %s", raw)
 	}
+	if !strings.Contains(string(concurrencyPage), "历史最高峰值") || !strings.Contains(string(concurrencyPage), "近 10 分钟时段峰值") ||
+		!strings.Contains(string(concurrencyScript), "historical_peak") {
+		t.Fatal("page must keep the 10-minute period chart and show the all-time peak")
+	}
 }
 
 func TestConcurrencyResources(t *testing.T) {

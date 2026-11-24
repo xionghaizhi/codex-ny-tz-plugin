@@ -153,7 +153,11 @@ func cliproxyPluginFree(ptr unsafe.Pointer, len C.size_t) {
 }
 
 //export cliproxyPluginShutdown
-func cliproxyPluginShutdown() {}
+func cliproxyPluginShutdown() {
+	if meter := requestMeter.Load(); meter != nil {
+		meter.flushHistoricalPeak()
+	}
+}
 
 func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
@@ -161,9 +165,13 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 		configure(request)
 		var lifecycle lifecycleRequest
 		_ = json.Unmarshal(request, &lifecycle)
+		previous := requestMeter.Load()
 		if lifecycle.SchemaVersion < 2 {
 			requestMeter.Store(nil)
-		} else if method == "plugin.register" || requestMeter.Load() == nil {
+		} else if method == "plugin.register" || previous == nil {
+			if previous != nil {
+				previous.flushHistoricalPeak()
+			}
 			requestMeter.Store(newConcurrencyMeter())
 		}
 		return okEnvelope(registrationJSON())
@@ -262,7 +270,7 @@ func registrationJSON() map[string]any {
 		"schema_version": schema,
 		"metadata": map[string]any{
 			"Name":             "codex-ny-timezone",
-			"Version":          "1.2.0",
+			"Version":          "1.2.1",
 			"Author":           "local",
 			"GitHubRepository": "https://github.com/xionghaizhi/codex-ny-tz-plugin",
 			"Logo":             "https://github.com/xionghaizhi/codex-ny-tz-plugin",
