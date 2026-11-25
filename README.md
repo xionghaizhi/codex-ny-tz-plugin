@@ -26,26 +26,18 @@ plugins:
 
 请求头改写只在上游请求已经包含 `Accept-Language` 时执行；没有该请求头时保持原请求不变。
 
-## 查看 CPA 并发
+### 清理旧峰值记录
 
-在 CPA 管理中心打开「并发查看」，或访问同一实例的 `/v0/resource/plugins/codex-ny-timezone/index.html`。
-输入 CPA 管理密钥，点击「开始监控」。每 2 秒读取本插件的管理接口；密钥不写浏览器存储。
-不依赖其他插件。宿主需要支持请求生命周期 schema v2；旧宿主仍保留原有时区与请求头改写。
-
-- **当前在途**：已进入 CPA 前置请求拦截、尚未收到完成回调的模型请求数。同一请求重试及其间等待仍计一次。
-  前置拦截后被认证、路由或其他步骤拒绝的请求也会计入，直到收到完成回调；完成回调是异步的，监控值可能短时高于实际并发。
-- **本次运行峰值**：从这次插件加载起的最高在途数及发生时间。重启 CPA 或重新加载插件动态库后从 0 再计。
-- **近 10 分钟时段峰值**：趋势图里每 5 秒一个点，取该 5 秒内的最高在途数，只保留近 10 分钟。窗口滑出或重启后，这些点会消失。
-- **历史最高峰值**：从支持此功能的版本开始记录累计最高在途数和发生时间，不补算旧版本数据。新峰值在后台保存，成功后重启或更新插件仍能读取；保存失败时页面会提示，下一次查询会重试。无法读取的旧文件不会被覆盖，修复文件后可重新查询；如本次没有新记录，可重新加载插件读取。
-  数据文件位于运行 CPA 的用户配置目录下的 `codex-ny-timezone/concurrency-history.json`（Linux 默认 `~/.config`，可用 `XDG_CONFIG_HOME` 指定）。同一文件只供一个 CPA 实例使用，多实例需隔离各自的用户配置目录。容器重建时需要把该目录挂载到持久卷，否则文件随容器丢失。
-  统计只覆盖当前实例，不是集群汇总，不限流，不显示单独的排队数。
+如果已装 `v1.2.1`，需要在插件市场指定 `v1.0.1` 安装；它不会作为更高版本的普通更新出现。
+加载 `v1.0.1` 后，在 CPA 的插件菜单打开「清理旧文件」，输入管理密钥，勾选确认并点击「清理旧峰值记录」。
+这仅会删除 CPA 进程的用户配置目录下的 `codex-ny-timezone/concurrency-history.json`，不自动执行，不触碰认证文件和账号管理插件数据。
 
 ## 构建
 
 ```bash
-go build -buildmode=c-shared -trimpath -o codex-ny-timezone.so main.go rewrite.go concurrency.go
+go build -buildmode=c-shared -trimpath -o codex-ny-timezone.so main.go rewrite.go cleanup.go
 # plugin.c is a separate C reference implementation, so list the Go files for tests too.
-go test main.go rewrite.go concurrency.go rewrite_test.go main_test.go concurrency_test.go
+go test main.go rewrite.go cleanup.go rewrite_test.go main_test.go cleanup_test.go
 ```
 
 必须显式列出 Go 文件。同目录 `plugin.c` 是纯 C 参考实现，用 `go build .` 会被 cgo 一起编译，

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -14,7 +13,7 @@ func TestInterceptRequestReplacesExistingAcceptLanguage(t *testing.T) {
 		t.Fatalf("marshal request: %v", err)
 	}
 
-	result, err := interceptRequest(raw, nil)
+	result, err := interceptRequest(raw)
 	if err != nil {
 		t.Fatalf("intercept request: %v", err)
 	}
@@ -31,63 +30,8 @@ func TestInterceptRequestReplacesExistingAcceptLanguage(t *testing.T) {
 	}
 }
 
-func TestConcurrencyRegistersAuthenticatedStatsAndStaticResources(t *testing.T) {
-	raw, err := handleMethod("management.register", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var response struct {
-		Result struct {
-			Routes    []struct{ Method, Path string }
-			Resources []struct{ Path, Menu string }
-		}
-	}
-	if err := json.Unmarshal(raw, &response); err != nil {
-		t.Fatal(err)
-	}
-	resources := response.Result.Resources
-	routes := response.Result.Routes
-	if len(routes) != 1 || routes[0].Method != "GET" || routes[0].Path != "/plugins/codex-ny-timezone/concurrency" || len(resources) != 2 ||
-		resources[0].Path != "/index.html" || resources[0].Menu != "并发查看" ||
-		resources[1].Path != "/concurrency.js" || resources[1].Menu != "" {
-		t.Fatalf("unexpected routes: %s", raw)
-	}
-	if !strings.Contains(string(concurrencyPage), "历史最高峰值") || !strings.Contains(string(concurrencyPage), "近 10 分钟时段峰值") ||
-		!strings.Contains(string(concurrencyScript), "historical_peak") {
-		t.Fatal("page must keep the 10-minute period chart and show the all-time peak")
-	}
-}
-
-func TestConcurrencyResources(t *testing.T) {
-	for _, resource := range []struct {
-		method, path, mime, content string
-		status                      int
-	}{
-		{"GET", "/index.html", "text/html", "./concurrency.js", 200},
-		{"GET", "/concurrency.js", "text/javascript", "/v0/management/plugins/codex-ny-timezone/concurrency", 200},
-		{"GET", "/concurrency", "text/plain", "", 404},
-		{"GET", "/anything", "text/plain", "", 404},
-		{"POST", "/index.html", "text/plain", "", 404},
-	} {
-		request, _ := json.Marshal(map[string]string{"Method": resource.method, "Path": concurrencyResourcePath + resource.path})
-		raw, err := handleMethod("management.handle", request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var response struct{ Result concurrencyResourceResponse }
-		if err := json.Unmarshal(raw, &response); err != nil {
-			t.Fatal(err)
-		}
-		result := response.Result
-		if result.StatusCode != resource.status || !strings.HasPrefix(result.Headers.Get("Content-Type"), resource.mime) ||
-			!strings.Contains(string(result.Body), resource.content) || (resource.status == 404 && len(result.Body) != 0) {
-			t.Errorf("%s %s: status=%d type=%s", resource.method, resource.path, result.StatusCode, result.Headers.Get("Content-Type"))
-		}
-	}
-}
-
 func TestInterceptRequestLeavesMissingAcceptLanguageUntouched(t *testing.T) {
-	result, err := interceptRequest([]byte(`{"Headers":{"User-Agent":["codex"]}}`), nil)
+	result, err := interceptRequest([]byte(`{"Headers":{"User-Agent":["codex"]}}`))
 	if err != nil {
 		t.Fatalf("intercept request: %v", err)
 	}

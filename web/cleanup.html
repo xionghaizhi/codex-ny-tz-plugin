@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>清理旧文件 · CPA</title>
+  <script src="./cleanup.js" defer></script>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: Canvas; color: CanvasText; font: 16px/1.5 system-ui, sans-serif; }
+    main { width: min(100% - 32px, 540px); margin: 32px auto; }
+    h1 { font-size: 1.5rem; margin: 0 0 12px; }
+    p { margin: 0 0 20px; }
+    form { display: grid; gap: 14px; }
+    input, button { font: inherit; }
+    input[type=password] { width: 100%; padding: 8px; border: 1px solid GrayText; border-radius: 4px; }
+    button { justify-self: start; min-height: 44px; padding: 8px 16px; border: 1px solid ButtonBorder; border-radius: 4px; }
+    #result { margin-top: 16px; min-height: 1.5em; }
+    code { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>清理旧文件</h1>
+    <p>只删除时区插件的 <code>concurrency-history.json</code>。账号和账号管理插件的数据不受影响。</p>
+    <form id="cleanup" method="post" autocomplete="off">
+      <label for="management-key">CPA 管理密钥</label>
+      <input id="management-key" type="password" required autocomplete="off" spellcheck="false">
+      <label><input id="confirm" type="checkbox" required> 我确认永久删除旧峰值记录</label>
+      <button id="remove-history" type="submit">清理旧峰值记录</button>
+    </form>
+    <p id="result" role="status"></p>
+  </main>
+</body>
+</html>

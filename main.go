@@ -34,26 +34,13 @@ extern void cliproxyPluginShutdown(void);
 import "C"
 
 import (
-	_ "embed"
 	"encoding/json"
-	"net/http"
 	"strings"
-	"sync/atomic"
 	"time"
 	"unsafe"
 )
 
 const abiVersion uint32 = 1
-
-var requestMeter atomic.Pointer[concurrencyMeter]
-
-const concurrencyResourcePath = "/v0/resource/plugins/codex-ny-timezone"
-
-//go:embed web/index.html
-var concurrencyPage []byte
-
-//go:embed web/concurrency.js
-var concurrencyScript []byte
 
 type envelope struct {
 	OK     bool            `json:"ok"`
@@ -65,8 +52,7 @@ type envelopeError struct {
 	Message string `json:"message"`
 }
 type lifecycleRequest struct {
-	ConfigYAML    []byte `json:"config_yaml"`
-	SchemaVersion uint32 `json:"schema_version"`
+	ConfigYAML []byte `json:"config_yaml"`
 }
 type requestTransform struct {
 	FromFormat string `json:"FromFormat"`
@@ -100,12 +86,6 @@ type requestInterceptResponse struct {
 	StatusCode      int                 `json:"StatusCode,omitempty"`
 	ResponseHeaders map[string][]string `json:"ResponseHeaders,omitempty"`
 	ResponseBody    []byte              `json:"ResponseBody,omitempty"`
-}
-
-type concurrencyResourceResponse struct {
-	StatusCode int
-	Headers    http.Header
-	Body       []byte
 }
 
 func main() {}
@@ -153,81 +133,29 @@ func cliproxyPluginFree(ptr unsafe.Pointer, len C.size_t) {
 }
 
 //export cliproxyPluginShutdown
-func cliproxyPluginShutdown() {
-	if meter := requestMeter.Load(); meter != nil {
-		meter.flushHistoricalPeak()
-	}
-}
+func cliproxyPluginShutdown() {}
 
 func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
 	case "plugin.register", "plugin.reconfigure":
 		configure(request)
-		var lifecycle lifecycleRequest
-		_ = json.Unmarshal(request, &lifecycle)
-		previous := requestMeter.Load()
-		if lifecycle.SchemaVersion < 2 {
-			requestMeter.Store(nil)
-		} else if method == "plugin.register" || previous == nil {
-			if previous != nil {
-				previous.flushHistoricalPeak()
-			}
-			requestMeter.Store(newConcurrencyMeter())
-		}
 		return okEnvelope(registrationJSON())
 	case "request.normalize":
 		return normalizeRequest(request)
-	case "request.intercept_before":
-		return interceptRequest(request, requestMeter.Load())
-	case "request.intercept_after":
-		return interceptRequest(request, nil)
-	case "request.complete":
-		var completed struct{ RequestID string }
-		if meter := requestMeter.Load(); meter != nil && json.Unmarshal(request, &completed) == nil {
-			meter.change(completed.RequestID, true, time.Now())
-		}
-		return okEnvelope(struct{}{})
+	case "request.intercept_before", "request.intercept_after":
+		return interceptRequest(request)
 	case "management.register":
 		return okEnvelope(map[string]any{
-			"routes":    []map[string]string{{"method": "GET", "path": "/plugins/codex-ny-timezone" + concurrencyStatsRoute}},
-			"resources": []map[string]string{{"path": "/index.html", "menu": "并发查看"}, {"path": "/concurrency.js"}},
+			"routes": []map[string]string{{"method": "POST", "path": cleanupRoute}},
+			"resources": []map[string]string{
+				{"path": "/cleanup.html", "menu": "清理旧文件"}, {"path": "/cleanup.js"},
+			},
 		})
 	case "management.handle":
-		return serveConcurrencyResource(request)
+		return serveCleanup(request)
 	default:
 		return errorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
-}
-
-func serveConcurrencyResource(raw []byte) ([]byte, error) {
-	var request struct{ Method, Path string }
-	if err := json.Unmarshal(raw, &request); err != nil {
-		return nil, err
-	}
-	if request.Method == http.MethodGet && request.Path == "/v0/management/plugins/codex-ny-timezone"+concurrencyStatsRoute {
-		return serveConcurrencyStats(requestMeter.Load())
-	}
-	status := http.StatusNotFound
-	contentType := "text/plain; charset=utf-8"
-	var body []byte
-	if request.Method == http.MethodGet {
-		switch request.Path {
-		case concurrencyResourcePath + "/index.html":
-			status, contentType, body = http.StatusOK, "text/html; charset=utf-8", concurrencyPage
-		case concurrencyResourcePath + "/concurrency.js":
-			status, contentType, body = http.StatusOK, "text/javascript; charset=utf-8", concurrencyScript
-		}
-	}
-	return okEnvelope(concurrencyResourceResponse{
-		StatusCode: status,
-		Headers: http.Header{
-			"Content-Type":            {contentType},
-			"Cache-Control":           {"no-store"},
-			"Content-Security-Policy": {"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"},
-			"X-Content-Type-Options":  {"nosniff"},
-		},
-		Body: body,
-	})
 }
 
 func configure(raw []byte) {
@@ -261,16 +189,11 @@ func yamlLike(key, text string) string {
 }
 
 func registrationJSON() map[string]any {
-	schema := 1
-	lifecycle := requestMeter.Load() != nil
-	if lifecycle {
-		schema = 2
-	}
 	return map[string]any{
-		"schema_version": schema,
+		"schema_version": 1,
 		"metadata": map[string]any{
 			"Name":             "codex-ny-timezone",
-			"Version":          "1.2.1",
+			"Version":          "1.0.1",
 			"Author":           "local",
 			"GitHubRepository": "https://github.com/xionghaizhi/codex-ny-tz-plugin",
 			"Logo":             "https://github.com/xionghaizhi/codex-ny-tz-plugin",
@@ -281,10 +204,9 @@ func registrationJSON() map[string]any {
 			}},
 		},
 		"capabilities": map[string]any{
-			"request_normalizer":       true,
-			"request_interceptor":      true,
-			"management_api":           true,
-			"request_lifecycle_plugin": lifecycle,
+			"request_normalizer":  true,
+			"request_interceptor": true,
+			"management_api":      true,
 		},
 	}
 }
@@ -299,15 +221,12 @@ func normalizeRequest(raw []byte) ([]byte, error) {
 	return okEnvelope(payloadResponse{Body: rewriteEnvContext(req.Body)})
 }
 
-func interceptRequest(raw []byte, meter *concurrencyMeter) ([]byte, error) {
+func interceptRequest(raw []byte) ([]byte, error) {
 	var req requestInterceptRequest
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &req); err != nil {
 			return nil, err
 		}
-	}
-	if meter != nil {
-		meter.change(req.RequestID, false, time.Now())
 	}
 	for headerName := range req.Headers {
 		if strings.EqualFold(headerName, "Accept-Language") {
