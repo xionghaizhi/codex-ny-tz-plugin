@@ -16,6 +16,10 @@
     input, button { font: inherit; }
     input[type=password] { width: 100%; padding: 8px; border: 1px solid GrayText; border-radius: 4px; }
     button { justify-self: start; min-height: 44px; padding: 8px 16px; border: 1px solid ButtonBorder; border-radius: 4px; }
+    button + button { margin-left: 8px; }
+    #files { display: grid; gap: 8px; margin: 4px 0; }
+    .file { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 10px; border: 1px solid GrayText; border-radius: 4px; }
+    .file small { display: block; opacity: .75; overflow-wrap: anywhere; }
     #result { margin-top: 16px; min-height: 1.5em; }
     code { overflow-wrap: anywhere; }
   </style>
@@ -27,8 +31,10 @@
     <form id="cleanup" method="post" autocomplete="off">
       <label for="management-key">CPA 管理密钥</label>
       <input id="management-key" type="password" required autocomplete="off" spellcheck="false">
-      <label><input id="confirm" type="checkbox" required> 我确认永久删除旧峰值记录</label>
-      <button id="remove-history" type="submit">清理旧峰值记录</button>
+      <button id="load-files" type="button">列出可清理文件</button>
+      <div id="files" aria-live="polite"></div>
+      <label id="confirm-label" hidden><input id="confirm" type="checkbox"> 我确认永久删除选中的文件</label>
+      <button id="remove-history" type="submit" disabled>删除选中文件</button>
     </form>
     <p id="result" role="status"></p>
   </main>

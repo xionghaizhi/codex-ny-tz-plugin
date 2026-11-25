@@ -146,7 +146,10 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 		return interceptRequest(request)
 	case "management.register":
 		return okEnvelope(map[string]any{
-			"routes": []map[string]string{{"method": "POST", "path": cleanupRoute}},
+			"routes": []map[string]string{
+				{"method": "GET", "path": cleanupRoute},
+				{"method": "POST", "path": cleanupRoute},
+			},
 			"resources": []map[string]string{
 				{"path": "/cleanup.html", "menu": "清理旧文件"}, {"path": "/cleanup.js"},
 			},
@@ -193,7 +196,7 @@ func registrationJSON() map[string]any {
 		"schema_version": 1,
 		"metadata": map[string]any{
 			"Name":             "codex-ny-timezone",
-			"Version":          "1.0.1",
+			"Version":          "1.0.2",
 			"Author":           "local",
 			"GitHubRepository": "https://github.com/xionghaizhi/codex-ny-tz-plugin",
 			"Logo":             "https://github.com/xionghaizhi/codex-ny-tz-plugin",

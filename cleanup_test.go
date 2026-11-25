@@ -38,17 +38,45 @@ func TestCleanupHistoryOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	expectCleanup(t, "GET", "/v0/management"+cleanupRoute, `{"confirm":"concurrency-history.json"}`, 404, "")
+	expectCleanup(t, "GET", "/v0/management"+cleanupRoute, "", 200, "")
 	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"confirm":"model-pricing-cache.json"}`, 400, "confirmation_required")
 	if _, err := os.Stat(target); err != nil {
 		t.Fatal(err)
 	}
-	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"confirm":"concurrency-history.json"}`, 200, "removed")
-	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"confirm":"concurrency-history.json"}`, 200, "missing")
+	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"file":"concurrency-history.json","confirm":"concurrency-history.json"}`, 200, "removed")
+	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"file":"concurrency-history.json","confirm":"concurrency-history.json"}`, 200, "missing")
 	for _, path := range keep {
 		if raw, err := os.ReadFile(path); err != nil || string(raw) != "keep or remove by path" {
 			t.Errorf("unrelated state changed at %s: %s %v", path, raw, err)
 		}
+	}
+}
+
+func TestListHistoryOnly(t *testing.T) {
+	dir := testHistoryDirectory(t)
+	target := filepath.Join(dir, historyFile)
+	if err := os.WriteFile(target, []byte(`{"peak":6,"peak_at":1795514374}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	otherState := filepath.Join(filepath.Dir(dir), ".cpa-account-config-manager")
+	if err := os.Mkdir(otherState, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherState, historyFile), []byte("unrelated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	status, body := listHistoryResponse()
+	if status != 200 {
+		t.Fatalf("expected HTTP 200, received %d", status)
+	}
+	var response struct {
+		Files []historyFileInfo `json:"files"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Files) != 1 || response.Files[0].Name != historyFile || response.Files[0].RelativePath != historyDirectory+"/"+historyFile {
+		t.Fatalf("listed files = %#v", response.Files)
 	}
 }
 
@@ -58,7 +86,7 @@ func TestCleanupRejectsDirectoriesAndLinks(t *testing.T) {
 	if err := os.Mkdir(target, 0700); err != nil {
 		t.Fatal(err)
 	}
-	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"confirm":"concurrency-history.json"}`, 409, "unavailable")
+	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"file":"concurrency-history.json","confirm":"concurrency-history.json"}`, 409, "unavailable")
 	if err := os.Remove(target); err != nil {
 		t.Fatal(err)
 	}
@@ -70,14 +98,14 @@ func TestCleanupRejectsDirectoriesAndLinks(t *testing.T) {
 	if err := os.Symlink(otherFile, target); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"confirm":"concurrency-history.json"}`, 409, "unavailable")
+	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"file":"concurrency-history.json","confirm":"concurrency-history.json"}`, 409, "unavailable")
 	if err := errors.Join(os.Remove(target), os.Remove(dir)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(other, dir); err != nil {
 		t.Fatal(err)
 	}
-	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"confirm":"concurrency-history.json"}`, 409, "unavailable")
+	expectCleanup(t, "POST", "/v0/management"+cleanupRoute, `{"file":"concurrency-history.json","confirm":"concurrency-history.json"}`, 409, "unavailable")
 	if raw, err := os.ReadFile(otherFile); err != nil || string(raw) != "unchanged" {
 		t.Fatalf("symlink destination changed: %s %v", raw, err)
 	}
